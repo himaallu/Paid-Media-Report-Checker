@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 
 import pandas as pd
 import streamlit as st
@@ -14,18 +15,20 @@ from checker.metrics import DataError, compute, load_csv
 from checker.pipeline import PipelineResult, Written, metrics_table, run, write
 from checker.report import CSS, report_html, summary_html
 from checker.sample_data import BRAND, OUT as SAMPLE_CSV
+from checker.ui import APP_CSS, claims_frame, email_card_html, hero_html, how_it_works_html, kpis, roas_chart, status_html, style_metrics
 from checker.usage import UsageTracker
-from checker.verifier import MISMATCH, UNSUPPORTED, VERIFIED
+from checker.verifier import VERIFIED
 from checker.writer import model_chain
 
 st.set_page_config(page_title="Report Checker", page_icon="✅", layout="wide")
+st.html(APP_CSS)
 
-STATUS_ICON = {VERIFIED: "✅ Verified", MISMATCH: "❌ Mismatch", UNSUPPORTED: "⚠️ Unsupported"}
 # The key comes from the environment, a local .env file, or Streamlit secrets (see README).
 load_dotenv()
 load_secrets(st.secrets)
 HAS_KEY = has_gemini_key()
 tracker = UsageTracker()
+DATE_COL = {"date": st.column_config.DateColumn("date", format="D MMM YYYY")}
 
 
 def render_usage(box) -> None:
@@ -33,21 +36,22 @@ def render_usage(box) -> None:
     rows = tracker.snapshot(model_chain())
     left = sum(int(r["remaining"]) for r in rows)
     with box.container():
-        st.header("Gemini calls today")
+        st.subheader("Gemini calls today")
         st.caption(f"**{left} left** across {len(rows)} models · resets at midnight Pacific time (11:00 or 12:00 in Dubai)")
         for r in rows:
             used, limit, remaining = int(r["used"]), int(r["limit"]), int(r["remaining"])
             st.progress(min(1.0, (limit - remaining) / limit), text=f"{r['model']}: {used} used · {remaining} left")
         st.caption("Counted by this app (Google doesn't report the remaining quota). Calls made with the same key elsewhere aren't included.")
 
+
 # ---------- sidebar ----------
 with st.sidebar:
-    st.header("1 · Data")
+    st.subheader("1 · Data")
     source = st.radio("Campaign export", ["Sample: fictional Dubai coffee chain", "Upload CSV"], label_visibility="collapsed")
     upload = st.file_uploader("CSV export", type="csv") if source == "Upload CSV" else None
     brand = st.text_input("Client name", BRAND)
 
-    st.header("2 · Writer")
+    st.subheader("2 · Writer")
     writer_choice = st.radio(
         "Summary writer",
         ["Gemini (LLM)", "Offline template"],
@@ -58,41 +62,40 @@ with st.sidebar:
     if writer_choice.startswith("Gemini") and not HAS_KEY:
         st.caption("⚠️ GEMINI_API_KEY isn't set, so the offline template will be used.")
 
-    st.header("3 · Demo")
+    st.subheader("3 · Demo")
     trap = st.toggle("🪤 Hallucination trap", help="Changes one number in the summary after it's written, to show the checker catching it.")
 
-    go = st.button("Generate & verify report", type="primary", use_container_width=True)
+    go = st.button("Generate & verify report", type="primary", width="stretch")
     st.divider()
     usage_box = st.empty()
     render_usage(usage_box)
     st.divider()
-    st.download_button("Download sample CSV", SAMPLE_CSV.read_bytes(), "sample_campaigns.csv", "text/csv", use_container_width=True)
+    st.download_button("Download sample CSV", SAMPLE_CSV.read_bytes(), "sample_campaigns.csv", "text/csv", width="stretch")
 
-# ---------- header ----------
-st.title("Paid Media Report Checker")
-st.caption("Weekly ad export → client-ready summary → every number checked against the source data before it can be sent.")
+hero_box = st.empty()
 
 
 def load_data() -> tuple[pd.DataFrame, bytes] | None:
     raw = upload.getvalue() if upload is not None else (SAMPLE_CSV.read_bytes() if source.startswith("Sample") else None)
     if raw is None:
         return None
-    from io import BytesIO
-
     return load_csv(BytesIO(raw)), raw
 
 
 try:
     loaded = load_data()
 except DataError as exc:
+    hero_box.html(hero_html(None))
     st.error(f"That file can't be used: {exc}")
     st.stop()
 
 if loaded is None:
+    hero_box.html(hero_html(None))
     st.info("Upload a CSV with columns: date, platform, campaign, ad_set, spend, impressions, clicks, conversions, revenue.")
     st.stop()
 
 df, raw = loaded
+go = go or st.session_state.pop("main_go", False)  # the landing page has its own Generate button (handy on phones)
 
 if go:
     use_llm = writer_choice.startswith("Gemini") and HAS_KEY
@@ -100,7 +103,7 @@ if go:
     key = hashlib.sha256(raw + brand.encode() + str(use_llm).encode()).hexdigest()
     cache: dict[str, Written] = st.session_state.setdefault("written", {})
     try:
-        with st.spinner("Computing metrics and writing the summary…"):
+        with st.spinner("Computing metrics, writing the summary and checking every number…"):
             written = cache.get(key)
             reused = written is not None
             if written is None:
@@ -112,96 +115,96 @@ if go:
             st.session_state["reused"] = reused
         render_usage(usage_box)
     except DataError as exc:
+        hero_box.html(hero_html(None))
         st.error(f"That file can't be used: {exc}")
         st.stop()
 
 result: PipelineResult | None = st.session_state.get("result")
+hero_box.html(hero_html(result))
+
+# ---------- landing ----------
 if result is None:
-    st.markdown(
-        "**How it works:** pandas computes every metric → the LLM writes a summary quoting only those numbers → "
-        "the checker re-reads every number in the text and matches it against the computed metrics."
+    st.html(how_it_works_html())
+    st.button(
+        "Generate & verify report",
+        type="primary",
+        key="main_generate",
+        on_click=lambda: st.session_state.update(main_go=True),
+        help="Uses the data, writer and trap settings in the sidebar.",
     )
-    st.subheader("Data preview")
-    st.dataframe(df.head(20), use_container_width=True, hide_index=True)
+    m = compute(df)
+    st.markdown(f"#### This week at a glance · {m.period.label()}")
+    for col, (label, value, delta, colour) in zip(st.columns(5, border=True), kpis(m)):
+        col.metric(label, value, delta, delta_color=colour)
+    st.markdown("#### Data preview")
+    st.caption(f"{len(df):,} rows · {df['campaign'].nunique()} campaigns · {df['platform'].nunique()} platforms. Settings are in the sidebar.")
+    st.dataframe(df.head(20), width="stretch", hide_index=True, column_config=DATE_COL)
     st.stop()
 
 v = result.verification
 
 # ---------- status ----------
-if v.ready:
-    st.success(f"### ✅ Ready to send  ·  {v.score()}")
-else:
-    issues = v.total - v.verified
-    st.error(f"### ⛔ Not ready to send  ·  {v.score()}  ·  {issues} issue(s) highlighted below")
-
+st.html(status_html(result, totals(result.calls), bool(st.session_state.get("reused"))))
 if result.notice:
-    st.warning(result.notice)
+    st.warning(result.notice, icon="⚠️")
 if result.trap:
     caught = any(c.status != VERIFIED and c.fact_id == result.trap.fact_id for c in v.checks)
     st.info(
-        f"🪤 **Trap mode:** after the summary was written, **{result.trap.original}** was changed to "
-        f"**{result.trap.injected}** ({result.trap.fact_id}). Caught by the checker: **{'yes' if caught else 'NO'}**."
+        f"**Trap mode:** after the summary was written, **{result.trap.original}** was changed to "
+        f"**{result.trap.injected}** (`{result.trap.fact_id}`). Caught by the checker: **{'yes' if caught else 'NO'}**.",
+        icon="🪤",
     )
 
-t = totals(result.calls)
-c1, c2, c3, c4, c5 = st.columns(5)
-c1.metric("Claims verified", f"{v.verified}/{v.total}")
-c2.metric("Writer", "Template" if result.writer == "offline template" else "Gemini", help=f"Written by: {result.writer}")
-c3.metric("Tokens (in / out)", f"{t['input_tokens']:,} / {t['output_tokens']:,}" if result.calls else "–")
-c4.metric("LLM latency", f"{t['latency_s']} s" if result.calls else "–")
-c5.metric("Cost", "–" if not result.calls else ("n/a" if t["cost_usd"] is None else f"${t['cost_usd']:.4f}"),
-          help="Paid-tier equivalent at list price; the free tier costs $0.")
-if st.session_state.get("reused") and result.calls:
-    st.caption("Summary reused from the previous run of this data (no new LLM call); usage shown is from that call.")
+# ---------- KPIs ----------
+st.markdown(f"#### This week at a glance · {result.metrics.period.label()}")
+for col, (label, value, delta, colour) in zip(st.columns(5, border=True), kpis(result.metrics)):
+    col.metric(label, value, delta, delta_color=colour)
 
 # ---------- summary + checks ----------
 left, right = st.columns([3, 2], gap="large")
 with left:
-    st.subheader(f"Client summary · {result.metrics.period.label()}")
-    st.html(f"<style>{CSS}</style>{summary_html(result)}")
-    st.caption("🟩 verified · 🟥 wrong value (correct value shown) · 🟨 number not linked to any metric. Hover a number for details.")
+    st.markdown("#### Client summary")
+    st.html(f"<style>{CSS}</style>{email_card_html(result, summary_html(result))}")
+
+    html = report_html(result)
+    slug = "".join(ch if ch.isalnum() else "-" for ch in result.brand.lower()).strip("-")
+    name = f"{slug}-weekly-report.html" if v.ready else f"{slug}-weekly-report-DRAFT-NOT-VERIFIED.html"
+    d1, d2 = st.columns(2)
+    d1.download_button(
+        "⬇ Download report" if v.ready else "⬇ Download draft (not verified)",
+        html,
+        name,
+        "text/html",
+        type="primary" if v.ready else "secondary",
+        width="stretch",
+    )
+    d2.download_button("⬇ Metrics CSV", metrics_table(result.metrics).to_csv().encode(), f"{slug}-metrics.csv", "text/csv", width="stretch")
 
 with right:
-    st.subheader("Claim-by-claim check")
-    rows = [
-        {
-            "Status": STATUS_ICON[c.status],
-            "Written": c.raw,
-            "Source value": c.expected or "–",
-            "Metric": c.fact_id or "–",
-            "Note": c.message,
-        }
-        for c in sorted(v.checks, key=lambda c: c.status == VERIFIED)  # failures first
-    ]
-    claims = pd.DataFrame(rows)
+    st.markdown("#### Claim-by-claim check")
+    claims = claims_frame(result)
+    only_issues = st.toggle("Show only issues", value=not v.ready, disabled=v.ready)
+    if only_issues:
+        claims = claims[~claims["Status"].str.startswith("✅")]
     st.dataframe(
         claims.style.apply(lambda r: ["background-color: #ffebe9" if not r["Status"].startswith("✅") else ""] * len(r), axis=1),
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
-        height=min(38 * (len(rows) + 1), 520),
+        height=min(36 * (len(claims) + 1) + 4, 420),
+        column_config={"Note": st.column_config.TextColumn(width="medium")},
     )
 
-# ---------- downloads ----------
-html = report_html(result)
-slug = "".join(ch if ch.isalnum() else "-" for ch in result.brand.lower()).strip("-")
-name = f"{slug}-weekly-report.html" if v.ready else f"{slug}-weekly-report-DRAFT-NOT-VERIFIED.html"
-d1, d2, _ = st.columns([1, 1, 2])
-d1.download_button(
-    "⬇ Download report" if v.ready else "⬇ Download draft (not verified)",
-    html,
-    name,
-    "text/html",
-    type="primary" if v.ready else "secondary",
-    use_container_width=True,
-)
-d2.download_button("⬇ Metrics CSV", metrics_table(result.metrics).to_csv().encode(), f"{slug}-metrics.csv", "text/csv", use_container_width=True)
+    st.markdown("#### ROAS by campaign · this week")
+    st.altair_chart(roas_chart(result.metrics), width="stretch")
+    st.caption("Hover a bar for spend, revenue and the week-over-week change. Below the dashed line, a campaign earns less than it spends.")
 
 # ---------- tables ----------
-st.subheader("Metrics (this week vs last week)")
+st.markdown("#### Metrics · this week, with week-over-week change")
 tab_c, tab_p, tab_t, tab_calls, tab_raw = st.tabs(["Campaigns", "Platforms", "Total", "LLM calls", "Raw data"])
-tab_c.dataframe(metrics_table(result.metrics, "campaign"), use_container_width=True)
-tab_p.dataframe(metrics_table(result.metrics, "platform"), use_container_width=True)
-tab_t.dataframe(metrics_table(result.metrics, "total"), use_container_width=True)
+tab_c.dataframe(style_metrics(metrics_table(result.metrics, "campaign")), width="stretch")
+tab_p.dataframe(style_metrics(metrics_table(result.metrics, "platform")), width="stretch")
+tab_t.dataframe(style_metrics(metrics_table(result.metrics, "total")), width="stretch")
+tab_c.caption("Green = better, red = worse (for CPA and CPC, lower is better). Spend changes are neutral.")
 with tab_calls:
     if result.calls:
         st.dataframe(
@@ -220,9 +223,9 @@ with tab_calls:
                     for c in result.calls
                 ]
             ),
-            use_container_width=True,
+            width="stretch",
             hide_index=True,
         )
     else:
         st.write("No LLM calls: the offline template wrote this summary.")
-tab_raw.dataframe(df, use_container_width=True, hide_index=True)
+tab_raw.dataframe(df, width="stretch", hide_index=True, column_config=DATE_COL)

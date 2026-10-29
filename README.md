@@ -78,7 +78,7 @@ If the repo is private, the app can still be public, or you can invite specific 
 | Command | What it does |
 | --- | --- |
 | `make run` | Start the Streamlit app |
-| `make test` | 55 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, writer retries and fallbacks with a fake Gemini client, the daily call counter, and the sample dataset |
+| `make test` | 59 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, writer retries and fallbacks with a fake Gemini client, the daily call counter, the UI helpers, and the sample dataset |
 | `make report` | Write `out/report.html` from the CLI and print the JSON verification result (exit code 0 = ready, 1 = not ready) |
 | `make trap` | The same, with the hallucination trap |
 | `make sample` | Regenerate `data/sample_campaigns.csv` |
@@ -114,6 +114,7 @@ checker/
   verifier.py           number extraction and claim checking
   trap.py               hallucination trap
   report.py             highlighted HTML (UI and download)
+  ui.py                 Streamlit page pieces: header, status card, KPI tiles, ROAS chart
   pipeline.py           CSV → metrics → summary → verification
   llm_log.py            tokens, latency, cost
   usage.py              Gemini calls per model per day (the "calls left" counter)
