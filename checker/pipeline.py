@@ -12,6 +12,7 @@ from checker.metrics import LABELS, MetricsResult, compute
 from checker.models import Summary
 from checker.offline_writer import write_offline
 from checker.trap import TrapInfo, inject
+from checker.usage import UsageTracker
 from checker.verifier import Verification, verify
 from checker.writer import WriterError, write_with_llm
 
@@ -38,11 +39,19 @@ class Written:
     notice: str = ""
 
 
-def write(metrics: MetricsResult, facts: dict[str, Fact], signals: list[Signal], brand: str, use_llm: bool, client: object = None) -> Written:
+def write(
+    metrics: MetricsResult,
+    facts: dict[str, Fact],
+    signals: list[Signal],
+    brand: str,
+    use_llm: bool,
+    client: object = None,
+    tracker: UsageTracker | None = None,
+) -> Written:
     if not use_llm:
         return Written(write_offline(facts, signals, brand), "offline template", [])
     try:
-        r = write_with_llm(facts, signals, metrics.period, brand, client=client)
+        r = write_with_llm(facts, signals, metrics.period, brand, client=client, tracker=tracker)
         return Written(r.summary, r.model, r.calls)
     except WriterError as exc:
         notice = f"LLM unavailable ({exc}); used the offline template instead."
@@ -56,12 +65,13 @@ def run(
     trap: bool = False,
     client: object = None,
     written: Written | None = None,
+    tracker: UsageTracker | None = None,
 ) -> PipelineResult:
     """`written` reuses an earlier summary (e.g. toggling the trap without a new LLM call)."""
     metrics = compute(df)
     facts = build_facts(metrics)
     signals = build_signals(metrics)
-    written = written or write(metrics, facts, signals, brand, use_llm, client)
+    written = written or write(metrics, facts, signals, brand, use_llm, client, tracker)
 
     summary, trap_info = written.summary, None
     if trap:

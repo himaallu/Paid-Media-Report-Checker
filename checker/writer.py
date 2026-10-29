@@ -21,6 +21,7 @@ from checker.facts import Fact, Signal
 from checker.llm_log import LLMCall
 from checker.metrics import Period
 from checker.models import Summary
+from checker.usage import UsageTracker
 
 DEFAULT_MODEL = "gemini-3-flash-preview"
 DEFAULT_FALLBACKS = "gemini-3.5-flash,gemini-3.1-flash-lite"
@@ -115,6 +116,7 @@ def write_with_llm(
     brand: str,
     client: Any = None,
     models: list[str] | None = None,
+    tracker: UsageTracker | None = None,
 ) -> WriterResult:
     from google.genai import errors
 
@@ -123,6 +125,9 @@ def write_with_llm(
     payload = build_payload(facts, signals, period, brand)
 
     for model in models or model_chain():
+        if tracker is not None and tracker.remaining(model) == 0:
+            calls.append(LLMCall(model, "skipped", 0.0, note="daily limit reached; not called"))
+            continue
         contents: list[Any] = [payload]
         with_thinking = True
         for attempt in range(2):  # one corrective retry for invalid output
@@ -135,8 +140,10 @@ def write_with_llm(
                     calls.append(LLMCall(model, "error", elapsed, note="thinking level not supported; retrying without"))
                     with_thinking = False
                     continue
+                if exc.code == 429 and tracker is not None and "perday" in str(exc).lower().replace(" ", "").replace("_", ""):
+                    tracker.mark_exhausted(model)
                 status = "rate_limited" if exc.code == 429 else "error"
-                calls.append(LLMCall(model, status, elapsed, note=f"HTTP {exc.code}"))
+                calls.append(LLMCall(model, status, elapsed, note=f"HTTP {exc.code}: {(exc.message or '')[:120]}"))
                 break  # next model
             except errors.ServerError as exc:
                 calls.append(LLMCall(model, "error", time.perf_counter() - started, note=f"HTTP {exc.code}"))
@@ -146,6 +153,8 @@ def write_with_llm(
                 break
 
             elapsed = time.perf_counter() - started
+            if tracker is not None:
+                tracker.record(model)  # a request that got a reply counts against the daily quota
             tokens_in, tokens_out, thinking = _usage(response)
             try:
                 summary = Summary.model_validate_json(response.text or "")
@@ -157,4 +166,5 @@ def write_with_llm(
             calls.append(LLMCall(model, "ok", elapsed, tokens_in, tokens_out, thinking))
             return WriterResult(summary, model, calls)
 
-    raise WriterError("No model returned a valid summary", calls)
+    last = next((c.note for c in reversed(calls) if c.note), "")
+    raise WriterError(f"no model returned a valid summary; last error: {last}" if last else "no model returned a valid summary", calls)

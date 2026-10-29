@@ -16,7 +16,7 @@ PRICES_PER_M = {
 @dataclass
 class LLMCall:
     model: str
-    status: str  # ok | invalid_output | rate_limited | error
+    status: str  # ok | invalid_output | rate_limited | error | skipped
     latency_s: float
     input_tokens: int = 0
     output_tokens: int = 0  # includes thinking tokens, which are billed as output

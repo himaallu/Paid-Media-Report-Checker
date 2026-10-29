@@ -4,3 +4,5 @@ __pycache__/
 .env
 report.html
 out/
+.usage/
+.streamlit/secrets.toml

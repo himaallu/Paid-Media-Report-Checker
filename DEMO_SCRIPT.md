@@ -1,8 +1,8 @@
 # Demo video script (about 80 seconds)
 
 **Setup before recording**
-- `GEMINI_API_KEY` is set and `streamlit run app.py` is open at 1440 px wide, sidebar visible, browser zoom 90–100%.
-- Do one full run before recording to warm up: Generate, then refresh the page. The free tier allows about 20 calls per model per day, so don't rehearse 30 times.
+- `GEMINI_API_KEY` is in `.env` (or in Streamlit secrets), and `streamlit run app.py` is open at 1440 px wide, sidebar visible, browser zoom 90–100%.
+- Do one full run before recording to warm up: Generate, then refresh the page. The sidebar shows how many Gemini calls are left today. Keep at least a few in reserve for the recording.
 - The trap re-uses the summary already written (no second LLM call), so it is instant and costs nothing.
 - If Gemini is down, choose "Offline template". The checker and the trap work exactly the same.
 

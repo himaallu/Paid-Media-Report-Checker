@@ -3,23 +3,42 @@
 from __future__ import annotations
 
 import hashlib
-import os
 
 import pandas as pd
 import streamlit as st
 
+from checker.config import has_gemini_key, load_dotenv, load_secrets
 from checker.facts import build_facts, build_signals
 from checker.llm_log import totals
 from checker.metrics import DataError, compute, load_csv
 from checker.pipeline import PipelineResult, Written, metrics_table, run, write
 from checker.report import CSS, report_html, summary_html
 from checker.sample_data import BRAND, OUT as SAMPLE_CSV
+from checker.usage import UsageTracker
 from checker.verifier import MISMATCH, UNSUPPORTED, VERIFIED
+from checker.writer import model_chain
 
 st.set_page_config(page_title="Report Checker", page_icon="✅", layout="wide")
 
 STATUS_ICON = {VERIFIED: "✅ Verified", MISMATCH: "❌ Mismatch", UNSUPPORTED: "⚠️ Unsupported"}
-HAS_KEY = bool(os.environ.get("GEMINI_API_KEY"))
+# The key comes from the environment, a local .env file, or Streamlit secrets (see README).
+load_dotenv()
+load_secrets(st.secrets)
+HAS_KEY = has_gemini_key()
+tracker = UsageTracker()
+
+
+def render_usage(box) -> None:
+    """Gemini requests made today per model, and how many are left on the free tier."""
+    rows = tracker.snapshot(model_chain())
+    left = sum(int(r["remaining"]) for r in rows)
+    with box.container():
+        st.header("Gemini calls today")
+        st.caption(f"**{left} left** across {len(rows)} models · resets at midnight Pacific time (11:00 or 12:00 in Dubai)")
+        for r in rows:
+            used, limit, remaining = int(r["used"]), int(r["limit"]), int(r["remaining"])
+            st.progress(min(1.0, (limit - remaining) / limit), text=f"{r['model']}: {used} used · {remaining} left")
+        st.caption("Counted by this app (Google doesn't report the remaining quota). Calls made with the same key elsewhere aren't included.")
 
 # ---------- sidebar ----------
 with st.sidebar:
@@ -43,6 +62,9 @@ with st.sidebar:
     trap = st.toggle("🪤 Hallucination trap", help="Changes one number in the summary after it's written, to show the checker catching it.")
 
     go = st.button("Generate & verify report", type="primary", use_container_width=True)
+    st.divider()
+    usage_box = st.empty()
+    render_usage(usage_box)
     st.divider()
     st.download_button("Download sample CSV", SAMPLE_CSV.read_bytes(), "sample_campaigns.csv", "text/csv", use_container_width=True)
 
@@ -83,11 +105,12 @@ if go:
             reused = written is not None
             if written is None:
                 m = compute(df)
-                written = write(m, build_facts(m), build_signals(m), brand, use_llm)
+                written = write(m, build_facts(m), build_signals(m), brand, use_llm, tracker=tracker)
                 if not written.notice:
                     cache[key] = written
             st.session_state["result"] = run(df, brand, trap=trap, written=written)
             st.session_state["reused"] = reused
+        render_usage(usage_box)
     except DataError as exc:
         st.error(f"That file can't be used: {exc}")
         st.stop()

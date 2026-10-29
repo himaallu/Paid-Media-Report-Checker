@@ -40,17 +40,45 @@ Every LLM call logs its model, status, latency, input and output tokens (thinkin
 
 ```bash
 pip install -r requirements.txt        # Python 3.11+
-cp .env.example .env                   # optional: add GEMINI_API_KEY
-export $(grep -v '^#' .env | xargs)    # or set GEMINI_API_KEY however you prefer
-streamlit run app.py                   # http://localhost:8501
+streamlit run app.py                   # opens http://localhost:8501
 ```
 
-Without a key, the app uses the offline template writer, and everything else works the same.
+### Add your Gemini key
+
+Get a free key at [Google AI Studio](https://aistudio.google.com/apikey), then use **one** of these:
+
+| Where you run it | Where the key goes |
+| --- | --- |
+| Your own computer | Copy `.env.example` to `.env` in the project folder and paste the key after `GEMINI_API_KEY=` |
+| Streamlit Community Cloud | The app's **Settings → Secrets**: paste `GEMINI_API_KEY = "your-key"` (see `.streamlit/secrets.toml.example`) |
+| Anywhere else | Set a `GEMINI_API_KEY` environment variable |
+
+`.env` and `.streamlit/secrets.toml` are gitignored, so the key never gets committed. Restart the app after adding it. Without a key, the app uses the offline template writer, and everything else works the same.
+
+### Gemini calls left today
+
+The sidebar shows how many Gemini requests the app has made today and how many are left, for each model. Each model has its own free-tier quota (20 a day by default; change it with `GEMINI_DAILY_LIMIT`). The count resets at midnight Pacific time (11:00 or 12:00 in Dubai).
+
+- If Google returns a "daily quota used up" error, that model is marked as used up and skipped until the reset.
+- Google doesn't report the remaining quota through the API, so the app counts its own calls. Calls made with the same key elsewhere aren't included.
+- The count is stored in `.usage/gemini_calls.json`. On Streamlit Cloud it starts again whenever the app restarts.
+
+Turning on the trap reuses the summary already written, so it doesn't use another call.
+
+### Share it
+
+The easiest way to give someone a link is [Streamlit Community Cloud](https://share.streamlit.io), which is free:
+
+1. Sign in with GitHub and click **Create app**. Choose this repo, branch `main` and file `app.py`.
+2. Under **Advanced settings → Secrets**, paste `GEMINI_API_KEY = "your-key"`.
+3. Deploy, then share the `*.streamlit.app` URL.
+
+If the repo is private, the app can still be public, or you can invite specific viewers by email in the app's sharing settings.
 
 | Command | What it does |
 | --- | --- |
 | `make run` | Start the Streamlit app |
-| `make test` | 48 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, writer retries and fallbacks with a fake Gemini client, and the sample dataset |
+| `make test` | 55 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, writer retries and fallbacks with a fake Gemini client, the daily call counter, and the sample dataset |
 | `make report` | Write `out/report.html` from the CLI and print the JSON verification result (exit code 0 = ready, 1 = not ready) |
 | `make trap` | The same, with the hallucination trap |
 | `make sample` | Regenerate `data/sample_campaigns.csv` |
@@ -88,6 +116,8 @@ checker/
   report.py             highlighted HTML (UI and download)
   pipeline.py           CSV → metrics → summary → verification
   llm_log.py            tokens, latency, cost
+  usage.py              Gemini calls per model per day (the "calls left" counter)
+  config.py             reads the key from env, .env or Streamlit secrets
   cli.py                headless run for schedulers
   sample_data.py        synthetic dataset generator
 data/sample_campaigns.csv
