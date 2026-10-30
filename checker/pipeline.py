@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pandas as pd
 
+from checker.autofix import Fix, autofix
 from checker.facts import Fact, Signal, build_facts, build_signals, fmt, unit_of
 from checker.llm_log import LLMCall
 from checker.metrics import LABELS, MetricsResult, compute
@@ -29,6 +30,8 @@ class PipelineResult:
     calls: list[LLMCall] = field(default_factory=list)
     trap: TrapInfo | None = None
     notice: str = ""  # shown in the UI, e.g. why the offline writer was used
+    fixes: list[Fix] = field(default_factory=list)  # set by correct()
+    original_score: str = ""  # the score before auto-correct
 
 
 @dataclass
@@ -78,6 +81,18 @@ def run(
         summary, trap_info = inject(summary, facts)
     return PipelineResult(
         brand, metrics, facts, signals, summary, written.writer, verify(summary, facts), written.calls, trap_info, written.notice
+    )
+
+
+def correct(result: PipelineResult) -> PipelineResult:
+    """Swap wrong numbers for the source values, then verify the corrected summary again from scratch."""
+    summary, fixes = autofix(result.summary, result.verification, result.facts)
+    return replace(
+        result,
+        summary=summary,
+        verification=verify(summary, result.facts),
+        fixes=fixes,
+        original_score=result.verification.score(),
     )
 
 

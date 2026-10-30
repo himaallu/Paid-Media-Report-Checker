@@ -71,7 +71,10 @@ def hero_html(result: PipelineResult | None) -> str:
         states = {
             "compute": ("ok", "① Computed ✓"),
             "write": ("ok", f"② Written by {writer} ✓"),
-            "verify": ("ok" if v.ready else "bad", f"③ {v.verified}/{v.total} verified" + (" ✓" if v.ready else " ✗")),
+            "verify": (
+                "ok" if v.ready else "bad",
+                f"③ {v.verified}/{v.total} verified" + (" (auto-corrected)" if result.fixes and v.ready else "") + (" ✓" if v.ready else " ✗"),
+            ),
             "send": ("ok" if v.ready else "bad", "④ Ready to send ✓" if v.ready else "④ Blocked"),
         }
     chips = []
@@ -90,7 +93,14 @@ def status_html(result: PipelineResult, totals: dict, reused: bool) -> str:
     v = result.verification
     pct = round(100 * v.verified / v.total) if v.total else 0
     issues = v.total - v.verified
-    if v.ready:
+    n_fixed = sum(f.kind in ("value", "direction") for f in result.fixes)
+    if v.ready and n_fixed:
+        cls, color, title = "ok", "#1a7f37", "Ready to send · auto-corrected"
+        sub = (
+            f"{n_fixed} wrong number{'s were' if n_fixed != 1 else ' was'} replaced with the source value, "
+            f"then the whole summary was checked again: {v.verified}/{v.total} verified (was {result.original_score.split()[0]})."
+        )
+    elif v.ready:
         cls, color, title = "ok", "#1a7f37", "Ready to send"
         sub = f"All {v.total} numbers in the summary match the source data."
     else:
@@ -125,7 +135,8 @@ def email_card_html(result: PipelineResult, body_html: str) -> str:
     legend = (
         '<div class="legend"><span class="num verified">verified</span> '
         '<span class="num mismatch" style="text-decoration:none">wrong value</span> '
-        '<span class="num unsupported">not linked to a metric</span> · hover a number for its source</div>'
+        '<span class="num unsupported">not linked to a metric</span> '
+        '<span class="num corrected">auto-corrected</span> · hover a number for its source</div>'
     )
     return (
         '<div class="card"><div class="email-head">'

@@ -32,7 +32,8 @@ flowchart LR
    - It compares the number with the value pandas computed, at the precision it was written. "38.2%" passes for 38.15–38.25, and "AED 41" passes for 40.5–41.5. A wrong value is a **Mismatch**, and the UI shows the correct value.
    - Direction words must match the sign: "CTR rose 35.6%" fails when CTR fell.
    - Anything other than **Verified** marks the report **Not ready to send**, and the download is labelled a draft.
-5. **Trap mode** (`checker/trap.py`). After the summary is written, trap mode changes one number in both the text and the claim, keeping the correct fact id. That is exactly what a real hallucination looks like. The checker has to catch it, and the tests prove that it does.
+5. **Auto-correct** (`checker/autofix.py`). When numbers fail, one click replaces each wrong number with the value pandas computed, and fixes a wrong direction word ("rose" when it fell). Then the whole summary is verified again from scratch. No LLM call is involved. Numbers that aren't linked to any metric can't be fixed automatically, so they stay flagged for a person to edit. Corrected numbers show in blue, with the original value noted.
+6. **Trap mode** (`checker/trap.py`). After the summary is written, trap mode changes one number in both the text and the claim, keeping the correct fact id. That is exactly what a real hallucination looks like. The checker has to catch it, and the tests prove that it does.
 
 Every LLM call logs its model, status, latency, input and output tokens (thinking tokens included) and cost. Cost is the paid-tier list price for Gemini 3 Flash ($0.50 / $3.00 per 1M tokens). On the free tier the real cost is $0.
 
@@ -78,7 +79,7 @@ If the repo is private, the app can still be public, or you can invite specific 
 | Command | What it does |
 | --- | --- |
 | `make run` | Start the Streamlit app |
-| `make test` | 59 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, writer retries and fallbacks with a fake Gemini client, the daily call counter, the UI helpers, and the sample dataset |
+| `make test` | 65 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, auto-correct, writer retries and fallbacks with a fake Gemini client, the daily call counter, the UI helpers, and the sample dataset |
 | `make report` | Write `out/report.html` from the CLI and print the JSON verification result (exit code 0 = ready, 1 = not ready) |
 | `make trap` | The same, with the hallucination trap |
 | `make sample` | Regenerate `data/sample_campaigns.csv` |
@@ -101,6 +102,8 @@ The CLI (`python -m checker.cli <csv>`) is the hook for scheduled runs: cron, an
 
 ![A report with every claim verified](docs/screenshot-verified.png)
 
+![The trap's wrong number auto-corrected back to the source value and re-verified](docs/screenshot-corrected.png)
+
 ## Project layout
 
 ```
@@ -113,6 +116,7 @@ checker/
   offline_writer.py     template writer (no LLM)
   verifier.py           number extraction and claim checking
   trap.py               hallucination trap
+  autofix.py            auto-correct: swap wrong numbers for source values, then re-verify
   report.py             highlighted HTML (UI and download)
   ui.py                 Streamlit page pieces: header, status card, KPI tiles, ROAS chart
   pipeline.py           CSV → metrics → summary → verification

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from html import escape
 
+from checker.autofix import Fix
 from checker.llm_log import totals
 from checker.models import SECTIONS
 from checker.pipeline import PipelineResult, metrics_table
@@ -22,6 +23,9 @@ CSS = """
 .sent-bad { background: #fff5f5; border-left: 4px solid #cf222e; display: block; padding: 6px 10px; margin: 6px 0; border-radius: 4px; }
 .fix { display: block; font-size: 13.5px; color: #a40e26; margin-top: 3px; }
 .fix.unsupported { color: #7a4d00; }
+.num.corrected { background: #ddf4ff; color: #0550ae; }
+.fixnote { display: block; font-size: 13px; color: #0550ae; margin-top: 2px; }
+.sent-fixed { background: #f3f9ff; border-left: 4px solid #0969da; display: block; padding: 6px 10px; margin: 6px 0; border-radius: 4px; }
 """
 
 STATUS_TITLE = {VERIFIED: "Verified", MISMATCH: "Mismatch", UNSUPPORTED: "Unsupported"}
@@ -35,16 +39,27 @@ def _span_start(text: str, check: NumberCheck) -> int:
     return check.start
 
 
-def sentence_html(sc: SentenceCheck) -> str:
+def sentence_html(sc: SentenceCheck, fixes: list[Fix] | None = None) -> str:
+    """`fixes` are the auto-corrections made in this sentence (highlighted in blue)."""
+    fixes = fixes or []
+    corrected = {f.fact_id: f for f in fixes if f.kind == "value"}
     text, pos, parts = sc.text, 0, []
     for c in sc.checks:
         start = _span_start(text, c)
         parts.append(escape(text[pos:start]))
+        cls = c.status
         tip = STATUS_TITLE[c.status] + (f" · {c.fact_id}" if c.fact_id else "") + (f" · {c.message}" if c.message else "")
-        parts.append(f'<span class="num {c.status}" title="{escape(tip)}">{escape(text[start:c.end].strip())}</span>')
+        if c.status == VERIFIED and c.fact_id in corrected:
+            cls = "corrected"
+            tip = f"Corrected from {corrected[c.fact_id].before} to the source value · {c.fact_id}"
+        parts.append(f'<span class="num {cls}" title="{escape(tip)}">{escape(text[start:c.end].strip())}</span>')
         pos = c.end
     parts.append(escape(text[pos:]))
     body = "".join(parts)
+    applied = [f for f in fixes if f.kind in ("value", "direction")]
+    if sc.ok and applied:
+        notes = "".join(f'<span class="fixnote">↺ Auto-corrected from the source data: “{escape(f.before)}” → “{escape(f.after)}”</span>' for f in applied)
+        return f'<span class="sent-fixed">{body}{notes}</span>'
     if sc.ok:
         return body
     fixes = []
@@ -60,16 +75,23 @@ def summary_html(result: PipelineResult) -> str:
     by_section: dict[str, list[SentenceCheck]] = {}
     for sc in result.verification.sentences:
         by_section.setdefault(sc.section, []).append(sc)
-    html = [f'<div class="hm-sum"><p class="headline">{sentence_html(by_section["headline"][0])}</p>']
+    fixes_by_sentence: dict[tuple[str, int], list[Fix]] = {}
+    for f in result.fixes:
+        fixes_by_sentence.setdefault((f.section, f.index), []).append(f)
+
+    def render(sc: SentenceCheck) -> str:
+        return sentence_html(sc, fixes_by_sentence.get((sc.section, sc.index)))
+
+    html = [f'<div class="hm-sum"><p class="headline">{render(by_section["headline"][0])}</p>']
     for key, title in SECTIONS.items():
         items = by_section.get(key, [])
         if not items:
             continue
         html.append(f"<h3>{escape(title)}</h3>")
         if key == "recommendations":
-            html.append("<ul>" + "".join(f"<li>{sentence_html(sc)}</li>" for sc in items) + "</ul>")
+            html.append("<ul>" + "".join(f"<li>{render(sc)}</li>" for sc in items) + "</ul>")
         else:
-            html.extend(f"<p>{sentence_html(sc)}</p>" for sc in items)
+            html.extend(f"<p>{render(sc)}</p>" for sc in items)
     html.append("</div>")
     return "".join(html)
 
@@ -77,8 +99,10 @@ def summary_html(result: PipelineResult) -> str:
 def report_html(result: PipelineResult) -> str:
     v = result.verification
     period = result.metrics.period.label()
+    n_fixed = sum(f.kind in ("value", "direction") for f in result.fixes)
     if v.ready:
-        stamp = f'<div class="stamp ok">✓ Ready to send · {v.score()}</div>'
+        note = f" · {n_fixed} auto-corrected from the source data" if n_fixed else ""
+        stamp = f'<div class="stamp ok">✓ Ready to send · {v.score()}{note}</div>'
     else:
         issues = v.total - v.verified
         stamp = f'<div class="stamp bad">✗ NOT READY TO SEND · {issues} issue(s) · {v.score()}</div>'

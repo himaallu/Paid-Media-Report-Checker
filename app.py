@@ -12,7 +12,7 @@ from checker.config import has_gemini_key, load_dotenv, load_secrets
 from checker.facts import build_facts, build_signals
 from checker.llm_log import totals
 from checker.metrics import DataError, compute, load_csv
-from checker.pipeline import PipelineResult, Written, metrics_table, run, write
+from checker.pipeline import PipelineResult, Written, correct, metrics_table, run, write
 from checker.report import CSS, report_html, summary_html
 from checker.sample_data import BRAND, OUT as SAMPLE_CSV
 from checker.ui import APP_CSS, claims_frame, email_card_html, hero_html, how_it_works_html, kpis, roas_chart, status_html, style_metrics
@@ -145,13 +145,25 @@ v = result.verification
 
 # ---------- status ----------
 st.html(status_html(result, totals(result.calls), bool(st.session_state.get("reused"))))
+fixable = [c for c in v.checks if c.status == "mismatch"]
+if fixable and not result.fixes:
+    st.button(
+        f"✨ Auto-correct {len(fixable)} number{'s' if len(fixable) != 1 else ''} from the source data",
+        type="primary",
+        on_click=lambda: st.session_state.update(result=correct(result)),
+        help="Swaps each wrong number for the value pandas computed, then runs the full check again. No LLM call.",
+    )
+if result.fixes and not v.ready:
+    st.warning("Some numbers aren't linked to any metric, so they can't be corrected automatically. Edit those sentences by hand.", icon="✋")
 if result.notice:
     st.warning(result.notice, icon="⚠️")
 if result.trap:
-    caught = any(c.status != VERIFIED and c.fact_id == result.trap.fact_id for c in v.checks)
+    caught = bool(result.fixes) or any(c.status != VERIFIED and c.fact_id == result.trap.fact_id for c in v.checks)
+    fixed = any(f.fact_id == result.trap.fact_id and f.kind == "value" for f in result.fixes)
     st.info(
         f"**Trap mode:** after the summary was written, **{result.trap.original}** was changed to "
-        f"**{result.trap.injected}** (`{result.trap.fact_id}`). Caught by the checker: **{'yes' if caught else 'NO'}**.",
+        f"**{result.trap.injected}** (`{result.trap.fact_id}`). Caught by the checker: **{'yes' if caught else 'NO'}**."
+        + (f" Auto-corrected back to **{result.trap.original}**." if fixed else ""),
         icon="🪤",
     )
 

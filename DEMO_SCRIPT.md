@@ -1,4 +1,4 @@
-# Demo video script (about 85 seconds)
+# Demo video script (about 95 seconds)
 
 ## Before you record
 
@@ -47,10 +47,16 @@ Point at the header (Verify and Send are now red, "Blocked"), then the red score
 Point at the highlighted sentence, with the struck-through number and the correct value underneath:
 > "It shows the exact sentence, the wrong figure, and the correct value from the data."
 
-Point at the claim table on the right (it now shows only the issue), then the button that says **Download draft (not verified)**:
-> "The claim table goes straight to the problem, and the download is labelled as an unverified draft, so it can't go to a client by mistake."
+Point at the claim table on the right (it now shows only the issue):
+> "The claim table goes straight to the problem."
 
-**1:08–1:25 · Close** (scroll to the **ROAS by campaign** chart, then the coloured metrics table)
+**1:08–1:20 · Auto-correct** (click **✨ Auto-correct 1 number from the source data**, just under the status card)
+> "Because the checker knows which metric that number was meant to be, it can fix it. It swaps in the real value and re-checks the whole summary from scratch. There's no second LLM call."
+
+Point at the header (all four steps green again), the ring (back to full), then the blue corrected number in the summary:
+> "Every number is verified again, so it's ready to send, and the correction is marked so the account manager can see exactly what changed."
+
+**1:20–1:35 · Close** (scroll to the **ROAS by campaign** chart, then the coloured metrics table)
 > "The account manager still gets the full picture: ROAS against break-even, and every week-over-week change, colour-coded. So the maths is deterministic, the LLM does the writing, and a verifier sits in between. Next I'd connect the Meta and Google Ads APIs and add Arabic summaries and brand-voice templates. The repo includes tests for all of this, including the trap."
 
 ---
@@ -61,8 +67,8 @@ Point at the claim table on the right (it now shows only the issue), then the bu
 2. Click **Generate & verify report** → header turns green → 28/28-style score ring → usage chips
 3. Email summary → hover over one green number (tooltip)
 4. Sidebar: **Hallucination trap** on → Generate again
-5. Header shows "Blocked" → red ring → highlighted sentence with the correct value
-6. Claim table (issues only) → **Download draft (not verified)** button
+5. Header shows "Blocked" → red ring → highlighted sentence with the correct value → claim table (issues only)
+6. Click **✨ Auto-correct** → header green again → full ring → blue corrected number with its note
 7. ROAS chart → coloured metrics table → end
 
 ## If something goes wrong
