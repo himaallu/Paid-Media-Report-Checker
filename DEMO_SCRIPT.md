@@ -2,7 +2,7 @@
 
 ## Before you record
 
-- Open the deployed app (your `*.streamlit.app` link), or run `streamlit run app.py` locally with `GEMINI_API_KEY` in `.env`.
+- Open the deployed app with `?tour=off` at the end of the link (https://paid-media-report-checker.streamlit.app/?tour=off), so the welcome pop-up doesn't appear on camera. Or run `streamlit run app.py` locally with `GEMINI_API_KEY` in `.env`.
 - Use a desktop browser about 1440 px wide, with the sidebar open and zoom at 90–100%. Hide your bookmarks bar.
 - In the sidebar: **Sample** data, client **Dune & Dallah Coffee**, writer **Gemini (LLM)**, trap **off**.
 - Check **Gemini calls today** in the sidebar. Keep at least 5 left: a run uses 1 call, or 2 if the model has to retry.

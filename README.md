@@ -35,6 +35,8 @@ flowchart LR
 5. **Auto-correct** (`checker/autofix.py`). When numbers fail, one click replaces each wrong number with the value pandas computed, and fixes a wrong direction word ("rose" when it fell). Then the whole summary is verified again from scratch. No LLM call is involved. Numbers that aren't linked to any metric can't be fixed automatically, so they stay flagged for a person to edit. Corrected numbers show in blue, with the original value noted.
 6. **Trap mode** (`checker/trap.py`). After the summary is written, trap mode changes one number in both the text and the claim, keeping the correct fact id. That is exactly what a real hallucination looks like. The checker has to catch it, and the tests prove that it does.
 
+**Guided demo.** First-time visitors get a short welcome pop-up offering a two-minute guided tour. The tour goes step by step through why the tool exists, the data, the pipeline, the verdict, the summary, the claim check, the trap and auto-correct. Each step highlights the part of the page it's talking about, scrolls to it, and does the clicking itself (generate, plant the trap, auto-correct), so a visitor only has to press **Next**. It can be restarted from the sidebar at any time. Add `?tour=start` to the link to open the tour straight away, or `?tour=off` to skip the welcome pop-up (useful when recording a video).
+
 Every LLM call logs its model, status, latency, input and output tokens (thinking tokens included) and cost. Cost is the paid-tier list price for Gemini 3 Flash ($0.50 / $3.00 per 1M tokens). On the free tier the real cost is $0.
 
 ## Run it
@@ -64,7 +66,7 @@ The sidebar shows how many Gemini requests the app has made today and how many a
 - Google doesn't report the remaining quota through the API, so the app counts its own calls. Calls made with the same key elsewhere aren't included.
 - The count is stored in `.usage/gemini_calls.json`. On Streamlit Cloud it starts again whenever the app restarts.
 
-Turning on the trap reuses the summary already written, so it doesn't use another call.
+Turning on the trap reuses the summary already written, so it doesn't use another call. Summaries are also shared between visitors for 6 hours: everyone who generates the same report (same data, client and writer) reuses one Gemini call, so a link shared on LinkedIn doesn't burn through the free quota.
 
 ### Share it
 
@@ -81,7 +83,7 @@ If the repo is private, the app can still be public, or you can invite specific 
 | Command | What it does |
 | --- | --- |
 | `make run` | Start the Streamlit app |
-| `make test` | 65 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, auto-correct, writer retries and fallbacks with a fake Gemini client, the daily call counter, the UI helpers, and the sample dataset |
+| `make test` | 69 pytest tests: metrics against hand-worked numbers, verifier rules, the trap, auto-correct, writer retries and fallbacks with a fake Gemini client, the daily call counter, the UI helpers, the guided demo (driven through the real app), and the sample dataset |
 | `make report` | Write `out/report.html` from the CLI and print the JSON verification result (exit code 0 = ready, 1 = not ready) |
 | `make trap` | The same, with the hallucination trap |
 | `make sample` | Regenerate `data/sample_campaigns.csv` |
@@ -121,6 +123,7 @@ checker/
   autofix.py            auto-correct: swap wrong numbers for source values, then re-verify
   report.py             highlighted HTML (UI and download)
   ui.py                 Streamlit page pieces: header, status card, KPI tiles, ROAS chart
+  tour.py               guided demo: steps, page states, highlight and scroll
   pipeline.py           CSV → metrics → summary → verification
   llm_log.py            tokens, latency, cost
   usage.py              Gemini calls per model per day (the "calls left" counter)
