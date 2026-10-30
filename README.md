@@ -74,6 +74,8 @@ The easiest way to give someone a link is [Streamlit Community Cloud](https://sh
 2. Under **Advanced settings → Secrets**, paste `GEMINI_API_KEY = "your-key"`.
 3. Deploy, then share the `*.streamlit.app` URL.
 
+**Keeping it awake.** Streamlit puts an app to sleep after 12 hours without visitors. The workflow in `.github/workflows/keep-awake.yml` opens the app in a headless browser every 6 hours, and clicks the wake-up button if it's already asleep, so visitors land straight in the app. You can also run it by hand: on GitHub, open **Actions → Keep Streamlit app awake → Run workflow**. GitHub pauses scheduled workflows in repos with no activity for 60 days; re-enable it from the same page if that happens.
+
 If the repo is private, the app can still be public, or you can invite specific viewers by email in the app's sharing settings.
 
 | Command | What it does |

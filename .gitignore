@@ -6,3 +6,4 @@ report.html
 out/
 .usage/
 .streamlit/secrets.toml
+keep-awake-failure.png

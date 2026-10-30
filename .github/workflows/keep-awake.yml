@@ -1,0 +1,46 @@
+# Keeps the Streamlit Community Cloud app from going to sleep.
+# Streamlit sleeps an app after 12 hours without visitors; this opens it in a real
+# headless browser every 6 hours (and wakes it if it is already asleep).
+# Run it by hand from the Actions tab with "Run workflow".
+name: Keep Streamlit app awake
+
+on:
+  schedule:
+    - cron: "17 */6 * * *" # every 6 hours, at :17 past (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keep-awake
+  cancel-in-progress: true
+
+jobs:
+  visit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      APP_URL: https://paid-media-report-checker.streamlit.app/
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-package-lock playwright@1.63.0
+          npx playwright install --with-deps chromium
+
+      - name: Visit the app (and wake it if needed)
+        run: node scripts/keep-awake.cjs
+
+      - name: Upload a screenshot if the app didn't load
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: keep-awake-failure
+          path: keep-awake-failure.png
+          if-no-files-found: ignore
